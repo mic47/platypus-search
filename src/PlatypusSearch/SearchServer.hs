@@ -76,6 +76,7 @@ grepFlags = unwords
   , "--exclude-dir='.idea'"
   , "--exclude-dir='.ensime_cache'"
   , "--exclude-dir='node_modules'"
+  , "--exclude-dir='.stack-work'"
   , "--exclude='*.swp'"
   , "--exclude='*.swo'"
   , "--exclude='.generated.ctags'"
