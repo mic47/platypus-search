@@ -81,6 +81,7 @@ grepFlags = unwords
   , "--exclude='.generated.ctags'"
   , "--exclude '*.xml'"
   , "--exclude '*.json'"
+  , "--exclude '*.jsonl'"
   , "--exclude '*.config'"
   , "--exclude '*.csv'"
   , "--exclude '*.txt'"
