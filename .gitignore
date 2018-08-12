@@ -1,0 +1,6 @@
+.stack-work/
+platypussearch.cabal
+localhost.crt
+localhost.key
+*~
+*.sw[a-z]
