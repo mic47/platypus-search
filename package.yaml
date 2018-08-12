@@ -1,6 +1,6 @@
-name:                platypussearch
+name:                platypus-search
 version:             0.1.0.0
-github:              "mic47/platypussearch"
+github:              "mic47/platypus-search"
 license:             BSD3
 author:              "Michal Nánási"
 maintainer:          "michal.nanasi@gmail.com"
@@ -17,7 +17,7 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on Github at <https://github.com/mic47/platypussearch#readme>
+description:         Please see the README on Github at <https://github.com/mic47/platypus-search#readme>
 
 dependencies:
 - base >= 4.7 && < 5
@@ -104,7 +104,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - platypussearch
+    - platypus-search
     - bytestring
     - directory
     - filepath
@@ -123,7 +123,7 @@ executables:
     - unordered-containers
 
 tests:
-  platypussearch-test:
+  platypus-search-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
@@ -131,4 +131,4 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - platypussearch
+    - platypus-search

@@ -1,5 +1,5 @@
 .stack-work/
-platypussearch.cabal
+platypus-search.cabal
 localhost.crt
 localhost.key
 *~
