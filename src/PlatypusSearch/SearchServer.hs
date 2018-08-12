@@ -89,6 +89,12 @@ grepFlags = unwords
   , "--exclude '*.ipynb'"
   , "--exclude '*.min.js'"
   , "--exclude '*.pyc'"
+  , "--exclude '*.ensime'"
+  , "--exclude '*.~1~'"
+  , "--exclude '*.~2~'"
+  , "--exclude '*.~3~'"
+  , "--exclude '*.part1'"
+  , "--exclude '*.part2'"
   ]
 
 getFileHtmlCommand :: String -> String
