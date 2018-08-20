@@ -11,6 +11,7 @@ import Data.Text.Encoding (decodeUtf8)
 import Data.List
 import qualified Data.Text as Text
 import System.Directory
+import System.IO
 
 server 
   :: [String]
@@ -48,8 +49,11 @@ server repos req respond = do
 
 runCommandAndSendResponse :: String -> IO Response
 runCommandAndSendResponse command = do
-  (_, output, _, _) <- runInteractiveCommand command
+  (h1, output, h2, process) <- runInteractiveCommand command
   outputStr <- LBS.hGetContents output
+  hClose h1
+  hClose h2
+  _ <- waitForProcess process
   return $ responseLBS
     status200
     [("Content-Type", "text/html; charset=utf-8")]
