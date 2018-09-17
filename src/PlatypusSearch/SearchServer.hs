@@ -13,6 +13,8 @@ import qualified Data.Text as Text
 import System.Directory
 import System.IO
 
+import Debug.Trace
+
 server 
   :: [String]
   -> Request
@@ -28,8 +30,9 @@ server repos req respond = do
   response <- case pathInfo req of
 
     ["search"] -> case allParams of 
-      [("q", Just query)] ->
-        runCommandAndSendResponse (getSearchCommand repos query)
+      [("q", Just query)] -> do
+        putStrLn (show query)
+        runCommandAndSendResponse (traceShowId $ getSearchCommand repos query)
       _ -> return wrongQuery
 
     ["source"] -> case allParams of 
@@ -51,9 +54,12 @@ runCommandAndSendResponse :: String -> IO Response
 runCommandAndSendResponse command = do
   (h1, output, h2, process) <- runInteractiveCommand command
   outputStr <- LBS.hGetContents output
+  putStrLn "Have output"
   hClose h1
   hClose h2
-  _ <- waitForProcess process
+  putStrLn "Closed"
+  -- _ <- waitForProcess process
+  putStrLn "Waited for process"
   return $ responseLBS
     status200
     [("Content-Type", "text/html; charset=utf-8")]
@@ -84,6 +90,7 @@ grepFlags = unwords
   , "--exclude='*.swp'"
   , "--exclude='*.swo'"
   , "--exclude='.generated.ctags'"
+  , "--exclude='.generated.sctags'"
   , "--exclude '*.xml'"
   , "--exclude '*.json'"
   , "--exclude '*.jsonl'"
