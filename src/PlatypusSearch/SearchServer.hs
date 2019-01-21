@@ -4,7 +4,7 @@ module PlatypusSearch.SearchServer
 
 import Network.Wai
 import Network.Wai.Parse
-import System.Process
+import System.Process hiding (runCommand)
 import qualified Data.ByteString.Lazy as LBS
 import Network.HTTP.Types (status400, status404, status200)
 import Data.Text.Encoding (decodeUtf8)
@@ -12,6 +12,7 @@ import Data.List
 import qualified Data.Text as Text
 import System.Directory
 import System.IO
+import Data.Text.Internal.Unsafe.Char (unsafeChr8)
 
 import Debug.Trace
 
@@ -26,13 +27,23 @@ server repos req respond = do
     lbsBackEnd
     req
   let 
-    allParams = map toText (queryString req ++ map (fmap Just) params')
+    allParams = sort $ map toText (queryString req ++ map (fmap Just) params')
   response <- case pathInfo req of
 
     ["search"] -> case allParams of 
       [("q", Just query)] -> do
         putStrLn (show query)
         runCommandAndSendResponse (traceShowId $ getSearchCommand repos query)
+      _ -> return wrongQuery
+
+    ["compare"] -> case allParams of
+      [("q1", Just query1), ("q2", Just query2)] -> do
+        putStrLn (show query1)
+        putStrLn (show query2)
+        putStrLn ("FFFUUUUUU")
+        commFiles <- lines . map unsafeChr8 . LBS.unpack . traceShowId <$> runCommand (traceShowId $ getCommCommand repos query1 query2)
+        putStrLn $ show commFiles
+        if null commFiles then sendResponse mempty else runCommandAndSendResponse $ traceShowId $ getSearchCommand commFiles $ combineGrepQueries query1 query2
       _ -> return wrongQuery
 
     ["source"] -> case allParams of 
@@ -51,7 +62,10 @@ server repos req respond = do
     toText (x, y) = (decodeUtf8 x, decodeUtf8 <$> y)
 
 runCommandAndSendResponse :: String -> IO Response
-runCommandAndSendResponse command = do
+runCommandAndSendResponse s = sendResponse =<< runCommand s
+
+runCommand :: String -> IO LBS.ByteString
+runCommand command = do
   (h1, output, h2, process) <- runInteractiveCommand command
   outputStr <- LBS.hGetContents output
   putStrLn "Have output"
@@ -60,17 +74,46 @@ runCommandAndSendResponse command = do
   putStrLn "Closed"
   -- _ <- waitForProcess process
   putStrLn "Waited for process"
+  return outputStr
+
+sendResponse :: LBS.ByteString -> IO Response
+sendResponse outputStr = do
   return $ responseLBS
     status200
     [("Content-Type", "text/html; charset=utf-8")]
     outputStr
 
-getSearchCommand :: [String] -> Text.Text -> String
-getSearchCommand repos query = mconcat
-  [ "grep --color=always -rn "
+getCommCommand :: [String] -> Text.Text -> Text.Text -> String
+getCommCommand repos query1 query2 = 
+  let 
+    cmd1 = getGrepCommand "never" repos query1 ++ " -l"
+    cmd2 = getGrepCommand "never" repos query2 ++ " -l"
+  in mconcat
+      [ "a=$(tempfile); b=$(tempfile); "
+      , cmd1, " | sort > $a ; "
+      , cmd2, " | sort > $b ; "
+      , "comm -12 $a $b"
+      ]
+
+combineGrepQueries :: Text.Text -> Text.Text -> Text.Text
+combineGrepQueries query1 query2 = mconcat
+  [ "\\(", query1
+  , "\\|", query2
+  , "\\)"
+  ]
+
+getGrepCommand :: String -> [String] -> Text.Text -> String
+getGrepCommand color repos query = mconcat
+  [ "grep --color=", color, " -rn "
   , grepFlags
   , " '", Text.unpack $ Text.replace  "'" "'\"'\"'"  query, "' "
-  , unwords repos , " "
+  , unwords repos
+  ]
+
+
+getSearchCommand :: [String] -> Text.Text -> String
+getSearchCommand repos query = mconcat
+  [ getGrepCommand "always" repos query, " "
   , "| head -n 20000 "
   , "| ansi2html -w "
   , "| sed -e 's/\\(<b[^>]*>\\)\\([^<]*\\)\\(<\\/b><b[^>]*>:<\\/b><b[^>]*>\\([0-9]*\\)\\)/\\1<a class=\"nostyle\" href=\"source?file=\\2#line\\4\">\\2<\\/a>\\3/;s/<\\/style>/a.nostyle:link {text-decoration: inherit;color: inherit;cursor: auto;}<\\/style>/' "
