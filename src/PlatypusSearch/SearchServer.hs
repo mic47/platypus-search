@@ -1,11 +1,18 @@
-module PlatypusSearch.SearchServer 
-  ( server
-  ) where
+{-# LANGUAGE OverloadedStrings #-}
+module PlatypusSearch.SearchServer where
+--  ( server
+--  , runCommandWithInputAndSendResponse
+--  , runCommandWithInput
+--  , runSearchAndSendResponse
+--  ) where
 
 import Network.Wai
 import Network.Wai.Parse
 import System.Process
 import qualified Data.ByteString.Lazy as LBS
+import Data.ByteString.Lazy.UTF8 as LBS
+import qualified Data.ByteString.Lazy.Char8 as LBSC
+import Control.Concurrent.Async (mapConcurrently)
 import Network.HTTP.Types (status400, status404, status200)
 import Data.Text.Encoding (decodeUtf8)
 import Data.List
@@ -13,9 +20,7 @@ import qualified Data.Text as Text
 import System.Directory
 import System.IO
 
-import Debug.Trace
-
-server 
+server
   :: [String]
   -> Request
   -> (Response -> IO ResponseReceived)
@@ -25,22 +30,22 @@ server repos req respond = do
     (setMaxRequestFileSize (1024*1024) defaultParseRequestBodyOptions)
     lbsBackEnd
     req
-  let 
+  let
     allParams = map toText (queryString req ++ map (fmap Just) params')
   response <- case pathInfo req of
 
-    ["search"] -> case allParams of 
+    ["search"] -> case allParams of
       [("q", Just query)] -> do
-        putStrLn (show query)
-        runCommandAndSendResponse (traceShowId $ getSearchCommand repos query)
+        print query
+        runSearchAndSendResponse repos query
       _ -> return wrongQuery
 
-    ["source"] -> case allParams of 
+    ["source"] -> case allParams of
       [("file", Just fileName)] -> do
         -- Make sure you can fetch only from predefined directory.
         fileNameStr <- makeAbsolute =<< canonicalizePath (Text.unpack fileName)
         if any (`isPrefixOf` fileNameStr) repos
-          then runCommandAndSendResponse (getFileHtmlCommand fileNameStr)
+          then runCommandWithInputAndSendResponse (getFileHtmlCommand fileNameStr) Nothing
           else return wrongQuery
       _ -> return wrongQuery
 
@@ -50,64 +55,64 @@ server repos req respond = do
   where
     toText (x, y) = (decodeUtf8 x, decodeUtf8 <$> y)
 
-runCommandAndSendResponse :: String -> IO Response
-runCommandAndSendResponse command = do
-  (h1, output, h2, process) <- runInteractiveCommand command
-  outputStr <- LBS.hGetContents output
+getGitFileList :: String -> IO [LBS.ByteString]
+getGitFileList repository = do
+  outputStr <- runCommandWithInput (mconcat ["cd ", repository, " ; git ls-files"]) Nothing
+  return (map (repository_prefix <>) (filter (not . LBS.null) (LBSC.split '\n' outputStr)))
+  where
+  repository_prefix :: LBS.ByteString
+  repository_prefix = LBS.fromString (repository <> "/")
+
+getFileListForAllRepositories :: [String] -> IO [LBS.ByteString]
+getFileListForAllRepositories repositories = mconcat <$> mapConcurrently getGitFileList repositories
+
+runCommandWithInput :: String -> Maybe LBS.ByteString -> IO LBS.ByteString
+runCommandWithInput command input = do
+  (stdin', output, stderr', process) <- runInteractiveCommand command
+  case input of
+    Nothing -> pure ()
+    Just input' -> LBS.hPut stdin' input'
+  outputStr <- LBS.fromStrict . LBS.toStrict <$> LBS.hGetContents output
   putStrLn "Have output"
-  hClose h1
-  hClose h2
+  hClose stdin'
+  hClose stderr'
   putStrLn "Closed"
   -- _ <- waitForProcess process
   putStrLn "Waited for process"
+  pure $ LBS.fromStrict $ LBS.toStrict outputStr
+
+runSearchAndSendResponse :: [String] -> Text.Text -> IO Response
+runSearchAndSendResponse repos query = do
+  files <- getFileListForAllRepositories repos
+  runCommandWithInputAndSendResponse searchCmd (Just (LBS.intercalate "\n" files))
+  where
+  searchCmd = parallelSeachAndProcessCommand (getSearchCommand query)
+
+
+
+runCommandWithInputAndSendResponse :: String -> Maybe LBS.ByteString -> IO Response
+runCommandWithInputAndSendResponse command input = do
+  outputStr <- runCommandWithInput command input
   return $ responseLBS
     status200
     [("Content-Type", "text/html; charset=utf-8")]
     outputStr
 
-getSearchCommand :: [String] -> Text.Text -> String
-getSearchCommand repos query = mconcat
-  [ "grep --color=always -rn "
-  , grepFlags
+getSearchCommand :: Text.Text -> String
+getSearchCommand query = mconcat
+  [ "grep --color=always -n "
   , " '", Text.unpack $ Text.replace  "'" "'\"'\"'"  query, "' "
-  , unwords repos , " "
-  , "| head -n 20000 "
+  ]
+
+parallelSeachAndProcessCommand :: String -> String
+parallelSeachAndProcessCommand command = mconcat
+  [ "parallel -N 100 "
+  , command, " {} "
+  , "| head -c 10000000 "
   , "| ansi2html -w "
   , "| sed -e 's/\\(<b[^>]*>\\)\\([^<]*\\)\\(<\\/b><b[^>]*>:<\\/b><b[^>]*>\\([0-9]*\\)\\)/\\1<a class=\"nostyle\" href=\"source?file=\\2#line\\4\">\\2<\\/a>\\3/;s/<\\/style>/a.nostyle:link {text-decoration: inherit;color: inherit;cursor: auto;}<\\/style>/' "
   ]
 
-grepFlags :: String
-grepFlags = unwords
-  [ "--exclude-dir=.git"
-  , "--exclude-dir=target"
-  , "--exclude=*.class"
-  , "--exclude-dir='$global'"
-  , "--exclude-dir='target'"
-  , "--exclude-dir='.idea'"
-  , "--exclude-dir='.ensime_cache'"
-  , "--exclude-dir='node_modules'"
-  , "--exclude-dir='.stack-work'"
-  , "--exclude='*.swp'"
-  , "--exclude='*.swo'"
-  , "--exclude='.generated.ctags'"
-  , "--exclude='.generated.sctags'"
-  , "--exclude '*.xml'"
-  , "--exclude '*.json'"
-  , "--exclude '*.jsonl'"
-  , "--exclude '*.config'"
-  , "--exclude '*.csv'"
-  , "--exclude '*.txt'"
-  , "--exclude '*.log'"
-  , "--exclude '*.ipynb'"
-  , "--exclude '*.min.js'"
-  , "--exclude '*.pyc'"
-  , "--exclude '*.ensime'"
-  , "--exclude '*.~1~'"
-  , "--exclude '*.~2~'"
-  , "--exclude '*.~3~'"
-  , "--exclude '*.part1'"
-  , "--exclude '*.part2'"
-  ]
 
 getFileHtmlCommand :: String -> String
 getFileHtmlCommand file = mconcat

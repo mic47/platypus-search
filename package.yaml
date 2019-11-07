@@ -73,6 +73,7 @@ default-extensions: [
 library:
   source-dirs: src
   dependencies:
+  - async
   - blaze-builder
   - blaze-html
   - blaze-markup
